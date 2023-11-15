@@ -14,15 +14,33 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	NotificationDefault = iota
+	NotificationNew
+)
+
+type LauncherBanner struct {
+	Src  string `json:"src"`
+	Link string `json:"link"`
+}
+
 type LauncherMessage struct {
 	Message string `json:"message"`
 	Date    int64  `json:"date"`
 	Link    string `json:"link"`
+	Kind    int    `json:"kind"`
+}
+
+type LauncherLink struct {
+	Name string `json:"name"`
+	Link string `json:"link"`
+	Icon string `json:"icon"`
 }
 
 type LauncherResponse struct {
-	Important []LauncherMessage `json:"important"`
-	Normal    []LauncherMessage `json:"normal"`
+	Banners  []LauncherBanner  `json:"banners"`
+	Messages []LauncherMessage `json:"messages"`
+	Links    []LauncherLink    `json:"links"`
 }
 
 type User struct {
@@ -37,7 +55,7 @@ type Character struct {
 	Weapon    uint32 `json:"weapon" db:"weapon_type"`
 	HR        uint32 `json:"hr" db:"hrp"`
 	GR        uint32 `json:"gr"`
-	LastLogin int64  `json:"lastLogin" db:"last_login"`
+	LastLogin int32  `json:"lastLogin" db:"last_login"`
 }
 
 type MezFes struct {
@@ -53,10 +71,11 @@ type AuthData struct {
 	CurrentTS     uint32      `json:"currentTs"`
 	ExpiryTS      uint32      `json:"expiryTs"`
 	EntranceCount uint32      `json:"entranceCount"`
-	Notifications []string    `json:"notifications"`
+	Notices       []string    `json:"notices"`
 	User          User        `json:"user"`
 	Characters    []Character `json:"characters"`
 	MezFes        *MezFes     `json:"mezFes"`
+	PatchServer   string      `json:"patchServer"`
 }
 
 func (s *Server) newAuthData(userID uint32, userRights uint32, userToken string, characters []Character) AuthData {
@@ -68,7 +87,14 @@ func (s *Server) newAuthData(userID uint32, userRights uint32, userToken string,
 			Rights: userRights,
 			Token:  userToken,
 		},
-		Characters: characters,
+		Characters:  characters,
+		PatchServer: s.erupeConfig.SignV2.PatchServer,
+		Notices:     []string{},
+	}
+	if s.erupeConfig.DevModeOptions.MaxLauncherHR {
+		for i := range resp.Characters {
+			resp.Characters[i].HR = 7
+		}
 	}
 	if s.erupeConfig.DevModeOptions.MezFesEvent {
 		stalls := []uint32{10, 3, 6, 9, 4, 8, 5, 7}
@@ -85,38 +111,102 @@ func (s *Server) newAuthData(userID uint32, userRights uint32, userToken string,
 		}
 	}
 	if !s.erupeConfig.HideLoginNotice {
-		resp.Notifications = append(resp.Notifications, strings.Join(s.erupeConfig.LoginNotices[:], "<PAGE>"))
+		resp.Notices = append(resp.Notices, strings.Join(s.erupeConfig.LoginNotices[:], "<PAGE>"))
 	}
 	return resp
 }
 
 func (s *Server) Launcher(w http.ResponseWriter, r *http.Request) {
 	var respData LauncherResponse
-	respData.Important = []LauncherMessage{
+	respData.Banners = []LauncherBanner{
 		{
-			Message: "Server Update 9 Released!",
-			Date:    time.Date(2022, 8, 2, 0, 0, 0, 0, time.UTC).Unix(),
+			Src:  "http://zerulight.cc/launcher/en/images/bnr/1030_0.jpg",
+			Link: "http://localhost",
+		},
+		{
+			Src:  "http://zerulight.cc/launcher/en/images/bnr/0801_3.jpg",
+			Link: "http://localhost",
+		},
+		{
+			Src:  "http://zerulight.cc/launcher/en/images/bnr/0705_3.jpg",
+			Link: "http://localhost",
+		},
+		{
+			Src:  "http://zerulight.cc/launcher/en/images/bnr/1211_11.jpg",
+			Link: "http://localhost",
+		},
+		{
+			Src:  "http://zerulight.cc/launcher/en/images/bnr/reg_mezefes.jpg",
+			Link: "http://localhost",
+		},
+	}
+	respData.Messages = []LauncherMessage{
+		{
+			Message: "Server Update 9.2 — Quest fixes,\nGacha support and tons of bug fixes!",
+			Date:    time.Date(2023, 4, 1, 0, 0, 0, 0, time.UTC).Unix(),
 			Link:    "https://discord.com/channels/368424389416583169/929509970624532511/1003985850255818762",
+			Kind:    NotificationNew,
 		},
 		{
-			Message: "Eng 2.0 & Ravi Patch Released!",
-			Date:    time.Date(2022, 5, 3, 0, 0, 0, 0, time.UTC).Unix(),
+			Message: "English Patch 4.1 — Fix \"Unknown\" weapons, NPC changes & Diva Support.",
+			Date:    time.Date(2023, 2, 27, 0, 0, 0, 0, time.UTC).Unix(),
 			Link:    "https://discord.com/channels/368424389416583169/929509970624532511/969305400795078656",
+			Kind:    NotificationNew,
 		},
 		{
-			Message: "Launcher Patch V1.0 Released!",
-			Date:    time.Date(2022, 4, 24, 0, 0, 0, 0, time.UTC).Unix(),
+			Message: "Server Update 9.1! Hunter Festival, Return worlds and NetCafe are back!",
+			Date:    time.Date(2022, 11, 4, 0, 0, 0, 0, time.UTC).Unix(),
 			Link:    "https://discord.com/channels/368424389416583169/929509970624532511/969286397301248050",
+			Kind:    NotificationDefault,
 		},
-	}
-	respData.Normal = []LauncherMessage{
 		{
-			Message: "Join the community Discord for updates!",
-			Date:    time.Date(2022, 4, 24, 0, 0, 0, 0, time.UTC).Unix(),
+			Message: "Deerby & Supream have been updating Ferias! You can find any and all MHF info/data there!",
+			Date:    time.Date(2022, 7, 7, 0, 0, 0, 0, time.UTC).Unix(),
 			Link:    "https://discord.gg/CFnzbhQ",
+			Kind:    NotificationDefault,
+		},
+		{
+			Message: "Server hosts, get Chakratos' Save Manager! Use it to enhance your Erupe server!",
+			Date:    time.Date(2022, 7, 7, 0, 0, 0, 0, time.UTC).Unix(),
+			Link:    "https://discord.gg/CFnzbhQ",
+			Kind:    NotificationDefault,
+		},
+		{
+			Message: "Server Update 9.0 is out! Enjoy MezFes and all the other new content!",
+			Date:    time.Date(2022, 8, 2, 0, 0, 0, 0, time.UTC).Unix(),
+			Link:    "https://discord.gg/CFnzbhQ",
+			Kind:    NotificationDefault,
+		},
+		{
+			Message: "English Community Translation 2 is here! Get the latest translation patch!",
+			Date:    time.Date(2022, 5, 4, 0, 0, 0, 0, time.UTC).Unix(),
+			Link:    "https://discord.gg/CFnzbhQ",
+			Kind:    NotificationDefault,
+		},
+		{
+			Message: "Join the community Discord for future updates!",
+			Date:    time.Date(2022, 5, 4, 0, 0, 0, 0, time.UTC).Unix(),
+			Link:    "https://discord.gg/CFnzbhQ",
+			Kind:    NotificationDefault,
 		},
 	}
-	w.WriteHeader(200)
+	respData.Links = []LauncherLink{
+		{
+			Name: "GitHub",
+			Link: "https://github.com/ZeruLight/Erupe",
+			Icon: "https://cdn-icons-png.flaticon.com/512/25/25231.png",
+		},
+		{
+			Name: "Discord",
+			Link: "https://discord.gg/DnwcpXM488",
+			Icon: "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png",
+		},
+		{
+			Name: "Equal Dragon Weapon Info",
+			Link: "https://discord.gg/DnwcpXM488",
+			Icon: "",
+		},
+	}
 	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(respData)
 }
@@ -166,8 +256,10 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+	if characters == nil {
+		characters = []Character{}
+	}
 	respData := s.newAuthData(userID, userRights, userToken, characters)
-	w.WriteHeader(200)
 	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(respData)
 }
@@ -182,6 +274,11 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("JSON decode error", zap.Error(err))
 		w.WriteHeader(400)
 		w.Write([]byte("Invalid data received"))
+		return
+	}
+	if reqData.Username == "" || reqData.Password == "" {
+		w.WriteHeader(400)
+		w.Write([]byte("Username and password must not be empty"))
 		return
 	}
 	s.logger.Info("Creating account", zap.String("username", reqData.Username))
@@ -205,6 +302,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respData := s.newAuthData(userID, userRights, userToken, []Character{})
+	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(respData)
 }
 
@@ -231,6 +329,10 @@ func (s *Server) CreateCharacter(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+	if s.erupeConfig.DevModeOptions.MaxLauncherHR {
+		character.HR = 7
+	}
+	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(character)
 }
 
@@ -256,5 +358,33 @@ func (s *Server) DeleteCharacter(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(struct{}{})
+}
+
+func (s *Server) ExportSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var reqData struct {
+		Token  string `json:"token"`
+		CharID uint32 `json:"charId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		s.logger.Error("JSON decode error", zap.Error(err))
+		w.WriteHeader(400)
+		w.Write([]byte("Invalid data received"))
+		return
+	}
+	userID, err := s.userIDFromToken(ctx, reqData.Token)
+	if err != nil {
+		w.WriteHeader(401)
+		return
+	}
+	save, err := s.exportSave(ctx, userID, reqData.CharID)
+	if err != nil {
+		s.logger.Error("Failed to export save", zap.Error(err), zap.String("token", reqData.Token), zap.Uint32("charID", reqData.CharID))
+		w.WriteHeader(500)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(save)
 }
